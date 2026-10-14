@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kcfg xmlns="http://www.kde.org/standards/kcfg/1.0"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="http://www.kde.org/standards/kcfg/1.0
+      http://www.kde.org/standards/kcfg/1.0/kcfg.xsd" >
+    <kcfgfile name=""/>
+    <group name="General">
+        <entry name="noteText" type="String">
+            <default></default>
+        </entry>
+        <entry name="colorTheme" type="Int">
+            <default>0</default>
+        </entry>
+        <entry name="fontFamily" type="String">
+            <default>Segoe Print</default>
+        </entry>
+        <entry name="fontSize" type="Int">
+            <default>13</default>
+        </entry>
+        <entry name="noteWidth" type="Int">
+            <default>260</default>
+        </entry>
+        <entry name="noteHeight" type="Int">
+            <default>250</default>
+        </entry>
+    </group>
+</kcfg>

@@ -1,0 +1,18 @@
+{
+    "KPackageStructure": "Plasma/Applet",
+    "KPlugin": {
+        "Authors": [
+            {
+                "Name": "Luis Fernando Vidriales Chávez"
+            }
+        ],
+        "Category": "Utilities",
+        "Description": "Sticky Notes estilo Windows 7 con formato enriquecido y viñetas",
+        "Icon": "knotes",
+        "Id": "org.kde.plasma.win7stickynotes",
+        "License": "GPL-3.0",
+        "Name": "Win7 Sticky Notes",
+        "Version": "1.0"
+    },
+    "X-Plasma-API-Minimum-Version": "6.0"
+}

@@ -1,0 +1,23 @@
+# Directorios de compilación
+build/
+cmake-build-*/
+
+# Archivos autogenerados por CMake y Qt
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+install_manifest.txt
+Makefile
+*.moc
+*_autogen/
+.qt/
+.qmlls.ini
+
+# Paquetes compilados y archivos de editor
+*.rpm
+*.tar.gz
+*.so
+*.o
+.vscode/
+.idea/
+*~
