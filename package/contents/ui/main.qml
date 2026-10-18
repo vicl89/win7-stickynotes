@@ -22,6 +22,34 @@ PlasmoidItem {
         id: bridge
     }
 
+    // Restaurador de posición al iniciar sesión o reiniciar plasmashell
+    Timer {
+        id: posRestoreTimer
+        interval: 200
+        repeat: true
+        property int attempts: 0
+        onTriggered: {
+            attempts += 1
+            if (Plasmoid.configuration.posX >= 0 && Plasmoid.configuration.posY >= 0) {
+                var ok = bridge.restorePosition(root, Plasmoid.configuration.posX, Plasmoid.configuration.posY)
+                if (ok && attempts >= 3) {
+                    stop()
+                }
+            } else {
+                stop()
+            }
+            if (attempts >= 12) {
+                stop()
+            }
+        }
+    }
+
+    Component.onCompleted: {
+        if (Plasmoid.configuration.posX >= 0 && Plasmoid.configuration.posY >= 0) {
+            posRestoreTimer.start()
+        }
+    }
+
     function createNewStickyNote() {
         var geom = bridge.nextCascadeGeometry(root)
         if (Plasmoid.containment && typeof Plasmoid.containment.createApplet === "function") {
@@ -82,6 +110,16 @@ PlasmoidItem {
                     onPressed: bridge.beginMove(root)
                     onPositionChanged: {
                         if (pressed) bridge.updateMove()
+                    }
+                    onReleased: {
+                        var finalPos = bridge.endMove(root)
+                        if (finalPos.x >= 0 && finalPos.y >= 0) {
+                            Plasmoid.configuration.posX = Math.round(finalPos.x)
+                            Plasmoid.configuration.posY = Math.round(finalPos.y)
+                            if (typeof Plasmoid.configuration.writeConfig === "function") {
+                                Plasmoid.configuration.writeConfig()
+                            }
+                        }
                     }
                 }
 
@@ -179,17 +217,18 @@ PlasmoidItem {
 
                         Repeater {
                             model: [
-                                { label: "B", bold: true,  italic: false, underline: false, action: "bold" },
-                                { label: "I", bold: false, italic: true,  underline: false, action: "italic" },
-                                { label: "U", bold: false, italic: false, underline: true,  action: "underline" },
-                                { label: "•≡", bold: true, italic: false, underline: false, action: "bullet" }
+                                { label: "B",  bold: true,  italic: false, underline: false, action: "bold" },
+                                { label: "I",  bold: false, italic: true,  underline: false, action: "italic" },
+                                { label: "U",  bold: false, italic: false, underline: true,  action: "underline" },
+                                { label: "•≡", bold: true,  italic: false, underline: false, action: "bullet" },
+                                { label: "☑",  bold: false, italic: false, underline: false, action: "check" }
                             ]
 
                             Rectangle {
-                                width: 26; height: 24
+                                width: 24; height: 24
                                 radius: 3
                                 color: fmtMouse.pressed ? Qt.darker(root.currentTheme.btnBg, 1.15)
-                                : (fmtMouse.containsMouse ? root.currentTheme.btnBg : "#33ffffff")
+                                     : (fmtMouse.containsMouse ? root.currentTheme.btnBg : "#33ffffff")
                                 border.color: root.currentTheme.accent
                                 border.width: 1
 
@@ -209,15 +248,22 @@ PlasmoidItem {
                                     hoverEnabled: true
                                     cursorShape: Qt.PointingHandCursor
                                     onClicked: {
+                                        var sStart = editor.selectionStart
+                                        var sEnd   = editor.selectionEnd
+                                        var cPos   = editor.cursorPosition
+
                                         if (modelData.action === "bold")
-                                            bridge.toggleBold(editor.textDocument, editor.cursorPosition, editor.selectionStart)
-                                            else if (modelData.action === "italic")
-                                                bridge.toggleItalic(editor.textDocument, editor.cursorPosition, editor.selectionStart)
-                                                else if (modelData.action === "underline")
-                                                    bridge.toggleUnderline(editor.textDocument, editor.cursorPosition, editor.selectionStart)
-                                                    else if (modelData.action === "bullet")
-                                                        bridge.toggleBulletList(editor.textDocument, editor.cursorPosition, editor.selectionStart)
-                                                        editor.forceActiveFocus()
+                                            bridge.toggleBold(editor.textDocument, sStart, sEnd, cPos)
+                                        else if (modelData.action === "italic")
+                                            bridge.toggleItalic(editor.textDocument, sStart, sEnd, cPos)
+                                        else if (modelData.action === "underline")
+                                            bridge.toggleUnderline(editor.textDocument, sStart, sEnd, cPos)
+                                        else if (modelData.action === "bullet")
+                                            bridge.toggleBulletList(editor.textDocument, sStart, sEnd, cPos)
+                                        else if (modelData.action === "check")
+                                            bridge.toggleChecklist(editor.textDocument, sStart, sEnd, cPos)
+
+                                        editor.forceActiveFocus()
                                     }
                                 }
                             }
@@ -228,7 +274,7 @@ PlasmoidItem {
                         Repeater {
                             model: root.themes
                             Rectangle {
-                                width: 15; height: 15
+                                width: 14; height: 14
                                 radius: 3
                                 color: modelData.body
                                 border.color: Plasmoid.configuration.colorTheme === index ? root.currentTheme.accent : "#66000000"
@@ -242,7 +288,7 @@ PlasmoidItem {
                         }
                     }
 
-                    // Fila 2: Selector de tipografía propio (sin QQC2.ComboBox) y selector de tamaño
+                    // Fila 2: Selector de tipografía propio y selector de tamaño
                     RowLayout {
                         Layout.fillWidth: true
                         spacing: 5
@@ -425,11 +471,29 @@ PlasmoidItem {
                     width: parent.width
                     textFormat: TextEdit.RichText
                     wrapMode: TextEdit.Wrap
+                    selectByMouse: true
+                    persistentSelection: true
                     color: "#1a1a1a"
                     font.family: Plasmoid.configuration.fontFamily
                     font.pixelSize: Plasmoid.configuration.fontSize
                     background: null
                     padding: 10
+
+                    property point pressPoint: Qt.point(0, 0)
+
+                    onPressed: (event) => {
+                        pressPoint = Qt.point(event.x, event.y)
+                    }
+
+                    onReleased: (event) => {
+                        var dx = Math.abs(event.x - pressPoint.x)
+                        var dy = Math.abs(event.y - pressPoint.y)
+                        // Si fue un clic directo sin arrastrar selección, verificar si tocó una casilla ☐/☑
+                        if (dx < 6 && dy < 6 && editor.selectionStart === editor.selectionEnd) {
+                            var pos = editor.positionAt(event.x, event.y)
+                            bridge.handleChecklistClick(editor.textDocument, pos)
+                        }
+                    }
 
                     Component.onCompleted: {
                         if (Plasmoid.configuration.noteText !== "") {
@@ -444,16 +508,19 @@ PlasmoidItem {
                     Keys.onPressed: (event) => {
                         if (event.modifiers & Qt.ControlModifier) {
                             if (event.key === Qt.Key_B) {
-                                bridge.toggleBold(editor.textDocument, editor.cursorPosition, editor.selectionStart)
+                                bridge.toggleBold(editor.textDocument, editor.selectionStart, editor.selectionEnd, editor.cursorPosition)
                                 event.accepted = true
                             } else if (event.key === Qt.Key_I) {
-                                bridge.toggleItalic(editor.textDocument, editor.cursorPosition, editor.selectionStart)
+                                bridge.toggleItalic(editor.textDocument, editor.selectionStart, editor.selectionEnd, editor.cursorPosition)
                                 event.accepted = true
                             } else if (event.key === Qt.Key_U) {
-                                bridge.toggleUnderline(editor.textDocument, editor.cursorPosition, editor.selectionStart)
+                                bridge.toggleUnderline(editor.textDocument, editor.selectionStart, editor.selectionEnd, editor.cursorPosition)
                                 event.accepted = true
                             } else if ((event.modifiers & Qt.ShiftModifier) && event.key === Qt.Key_L) {
-                                bridge.toggleBulletList(editor.textDocument, editor.cursorPosition, editor.selectionStart)
+                                bridge.toggleBulletList(editor.textDocument, editor.selectionStart, editor.selectionEnd, editor.cursorPosition)
+                                event.accepted = true
+                            } else if ((event.modifiers & Qt.ShiftModifier) && event.key === Qt.Key_C) {
+                                bridge.toggleChecklist(editor.textDocument, editor.selectionStart, editor.selectionEnd, editor.cursorPosition)
                                 event.accepted = true
                             }
                         }
@@ -501,6 +568,9 @@ PlasmoidItem {
                 onReleased: {
                     Plasmoid.configuration.noteWidth = Math.round(lastSize.width)
                     Plasmoid.configuration.noteHeight = Math.round(lastSize.height)
+                    if (typeof Plasmoid.configuration.writeConfig === "function") {
+                        Plasmoid.configuration.writeConfig()
+                    }
                 }
             }
         }

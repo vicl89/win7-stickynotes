@@ -12,7 +12,7 @@
         "Id": "org.kde.plasma.win7stickynotes",
         "License": "GPL-3.0",
         "Name": "Win7 Sticky Notes",
-        "Version": "1.0"
+        "Version": "1.1"
     },
     "X-Plasma-API-Minimum-Version": "6.0"
 }

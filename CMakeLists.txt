@@ -21,7 +21,7 @@ kpackage_install_package(package org.kde.plasma.win7stickynotes plasmoids plasma
 
 ecm_add_qml_module(stickynotesplugin
     URI "org.kde.plasma.win7stickynotes.backend"
-    VERSION 1.0
+    VERSION 1.1
     GENERATE_PLUGIN_SOURCE
 )
 
