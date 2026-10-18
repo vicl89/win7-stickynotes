@@ -23,5 +23,11 @@
         <entry name="noteHeight" type="Int">
             <default>250</default>
         </entry>
+        <entry name="posX" type="Int">
+            <default>-1</default>
+        </entry>
+        <entry name="posY" type="Int">
+            <default>-1</default>
+        </entry>
     </group>
 </kcfg>
