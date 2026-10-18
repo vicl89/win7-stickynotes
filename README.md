@@ -3,6 +3,7 @@
 Un widget de notas adhesivas (*Sticky Notes*) para **KDE Plasma 6**, diseñado para replicar con total fidelidad la estética y experiencia de las clásicas notas de Windows 7 Aero[cite: 1, 3].
 
 ![Preview del Plasmoide](screenshots/preview.png)
+![Vista previa con Checklist](screenshots/checklist-preview.png)
 
 ## ✨ Características principales
 
