@@ -24,10 +24,10 @@
             <default>250</default>
         </entry>
         <entry name="posX" type="Int">
-            <default>-1</default>
+            <default>-99999</default>
         </entry>
         <entry name="posY" type="Int">
-            <default>-1</default>
+            <default>-99999</default>
         </entry>
     </group>
 </kcfg>

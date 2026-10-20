@@ -22,32 +22,39 @@ PlasmoidItem {
         id: bridge
     }
 
-    // Restaurador de posición al iniciar sesión o reiniciar plasmashell
+    function syncNoteText() {
+        Plasmoid.configuration.noteText = editor.text
+        if (typeof Plasmoid.configuration.writeConfig === "function") {
+            Plasmoid.configuration.writeConfig()
+        }
+    }
+
+    // Sincronizador inicial con el contenedor del escritorio
     Timer {
         id: posRestoreTimer
-        interval: 200
+        interval: 250
         repeat: true
         property int attempts: 0
         onTriggered: {
             attempts += 1
-            if (Plasmoid.configuration.posX >= 0 && Plasmoid.configuration.posY >= 0) {
-                var ok = bridge.restorePosition(root, Plasmoid.configuration.posX, Plasmoid.configuration.posY)
-                if (ok && attempts >= 3) {
-                    stop()
-                }
-            } else {
+            var bound = bridge.syncGeometry(
+                root,
+                Plasmoid.configuration.posX,
+                Plasmoid.configuration.posY,
+                Plasmoid.configuration.noteWidth,
+                Plasmoid.configuration.noteHeight
+            )
+            // Mantener verificación durante los primeros 6 segundos de arranque de sesión
+            if (bound && attempts >= 24) {
                 stop()
-            }
-            if (attempts >= 12) {
+            } else if (attempts >= 40) {
                 stop()
             }
         }
     }
 
     Component.onCompleted: {
-        if (Plasmoid.configuration.posX >= 0 && Plasmoid.configuration.posY >= 0) {
-            posRestoreTimer.start()
-        }
+        posRestoreTimer.start()
     }
 
     function createNewStickyNote() {
@@ -113,7 +120,7 @@ PlasmoidItem {
                     }
                     onReleased: {
                         var finalPos = bridge.endMove(root)
-                        if (finalPos.x >= 0 && finalPos.y >= 0) {
+                        if (finalPos.x > -10000 && finalPos.y > -10000) {
                             Plasmoid.configuration.posX = Math.round(finalPos.x)
                             Plasmoid.configuration.posY = Math.round(finalPos.y)
                             if (typeof Plasmoid.configuration.writeConfig === "function") {
@@ -263,6 +270,7 @@ PlasmoidItem {
                                         else if (modelData.action === "check")
                                             bridge.toggleChecklist(editor.textDocument, sStart, sEnd, cPos)
 
+                                        root.syncNoteText()
                                         editor.forceActiveFocus()
                                     }
                                 }
@@ -378,7 +386,10 @@ PlasmoidItem {
                                             hoverEnabled: true
                                             onClicked: {
                                                 Plasmoid.configuration.fontFamily = modelData
+                                                bridge.setFontFamily(editor.textDocument, modelData)
+                                                root.syncNoteText()
                                                 fontPopup.close()
+                                                editor.forceActiveFocus()
                                             }
                                         }
                                     }
@@ -416,8 +427,13 @@ PlasmoidItem {
                                         hoverEnabled: true
                                         cursorShape: Qt.PointingHandCursor
                                         onClicked: {
-                                            if (Plasmoid.configuration.fontSize > 8)
-                                                Plasmoid.configuration.fontSize -= 1
+                                            if (Plasmoid.configuration.fontSize > 8) {
+                                                var newSize = Plasmoid.configuration.fontSize - 1
+                                                Plasmoid.configuration.fontSize = newSize
+                                                bridge.setFontSize(editor.textDocument, newSize)
+                                                root.syncNoteText()
+                                                editor.forceActiveFocus()
+                                            }
                                         }
                                     }
                                 }
@@ -450,8 +466,13 @@ PlasmoidItem {
                                         hoverEnabled: true
                                         cursorShape: Qt.PointingHandCursor
                                         onClicked: {
-                                            if (Plasmoid.configuration.fontSize < 42)
-                                                Plasmoid.configuration.fontSize += 1
+                                            if (Plasmoid.configuration.fontSize < 42) {
+                                                var newSize = Plasmoid.configuration.fontSize + 1
+                                                Plasmoid.configuration.fontSize = newSize
+                                                bridge.setFontSize(editor.textDocument, newSize)
+                                                root.syncNoteText()
+                                                editor.forceActiveFocus()
+                                            }
                                         }
                                     }
                                 }
@@ -488,10 +509,11 @@ PlasmoidItem {
                     onReleased: (event) => {
                         var dx = Math.abs(event.x - pressPoint.x)
                         var dy = Math.abs(event.y - pressPoint.y)
-                        // Si fue un clic directo sin arrastrar selección, verificar si tocó una casilla ☐/☑
                         if (dx < 6 && dy < 6 && editor.selectionStart === editor.selectionEnd) {
                             var pos = editor.positionAt(event.x, event.y)
-                            bridge.handleChecklistClick(editor.textDocument, pos)
+                            if (bridge.handleChecklistClick(editor.textDocument, pos)) {
+                                root.syncNoteText()
+                            }
                         }
                     }
 
@@ -509,18 +531,23 @@ PlasmoidItem {
                         if (event.modifiers & Qt.ControlModifier) {
                             if (event.key === Qt.Key_B) {
                                 bridge.toggleBold(editor.textDocument, editor.selectionStart, editor.selectionEnd, editor.cursorPosition)
+                                root.syncNoteText()
                                 event.accepted = true
                             } else if (event.key === Qt.Key_I) {
                                 bridge.toggleItalic(editor.textDocument, editor.selectionStart, editor.selectionEnd, editor.cursorPosition)
+                                root.syncNoteText()
                                 event.accepted = true
                             } else if (event.key === Qt.Key_U) {
                                 bridge.toggleUnderline(editor.textDocument, editor.selectionStart, editor.selectionEnd, editor.cursorPosition)
+                                root.syncNoteText()
                                 event.accepted = true
                             } else if ((event.modifiers & Qt.ShiftModifier) && event.key === Qt.Key_L) {
                                 bridge.toggleBulletList(editor.textDocument, editor.selectionStart, editor.selectionEnd, editor.cursorPosition)
+                                root.syncNoteText()
                                 event.accepted = true
                             } else if ((event.modifiers & Qt.ShiftModifier) && event.key === Qt.Key_C) {
                                 bridge.toggleChecklist(editor.textDocument, editor.selectionStart, editor.selectionEnd, editor.cursorPosition)
+                                root.syncNoteText()
                                 event.accepted = true
                             }
                         }
@@ -566,8 +593,9 @@ PlasmoidItem {
                     if (pressed) lastSize = bridge.updateResize(180, 160)
                 }
                 onReleased: {
-                    Plasmoid.configuration.noteWidth = Math.round(lastSize.width)
-                    Plasmoid.configuration.noteHeight = Math.round(lastSize.height)
+                    var finalSize = bridge.endResize(root)
+                    Plasmoid.configuration.noteWidth = Math.round(finalSize.width)
+                    Plasmoid.configuration.noteHeight = Math.round(finalSize.height)
                     if (typeof Plasmoid.configuration.writeConfig === "function") {
                         Plasmoid.configuration.writeConfig()
                     }

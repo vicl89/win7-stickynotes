@@ -1,10 +1,13 @@
 #include "notebridge.h"
 #include <QTextDocument>
 #include <QTextBlock>
+#include <QTextFragment>
 #include <QTextCharFormat>
 #include <QDBusInterface>
 #include <QDBusConnection>
 #include <QCursor>
+#include <QTimer>
+#include <QtMath>
 
 NoteBridge::NoteBridge(QObject *parent) : QObject(parent) {}
 
@@ -49,8 +52,10 @@ void NoteBridge::toggleUnderline(QQuickTextDocument *qdoc, int selStart, int sel
 void NoteBridge::toggleBulletList(QQuickTextDocument *qdoc, int selStart, int selEnd, int cursorPos) {
     if (!qdoc || !qdoc->textDocument()) return;
     QTextCursor cursor(qdoc->textDocument());
-    cursor.setPosition(qMin(selStart, selEnd), QTextCursor::MoveAnchor);
-    cursor.setPosition(qMax(selStart, selEnd), QTextCursor::KeepAnchor);
+    int startPos = (selStart != selEnd) ? qMin(selStart, selEnd) : cursorPos;
+    int endPos   = (selStart != selEnd) ? qMax(selStart, selEnd) : cursorPos;
+    cursor.setPosition(startPos, QTextCursor::MoveAnchor);
+    cursor.setPosition(endPos, QTextCursor::KeepAnchor);
 
     QTextList *currentList = cursor.currentList();
     if (currentList) {
@@ -91,7 +96,7 @@ void NoteBridge::toggleChecklist(QQuickTextDocument *qdoc, int selStart, int sel
             fmt.setFontStrikeOut(false);
             blockCursor.mergeCharFormat(fmt);
         } else {
-            QTextCharFormat normalFmt;
+            QTextCharFormat normalFmt = blockCursor.charFormat();
             normalFmt.setFontStrikeOut(false);
             blockCursor.insertText(QStringLiteral("☐ "), normalFmt);
         }
@@ -111,7 +116,6 @@ bool NoteBridge::handleChecklistClick(QQuickTextDocument *qdoc, int charPos) {
     int relPos = charPos - block.position();
     QString text = block.text();
 
-    // Si el clic ocurrió sobre la casilla al inicio de la línea (primeros 2 caracteres)
     if (relPos >= 0 && relPos <= 2 &&
         (text.startsWith(QStringLiteral("☐ ")) || text.startsWith(QStringLiteral("☑ ")))) {
         bool markDone = text.startsWith(QStringLiteral("☐ "));
@@ -119,7 +123,6 @@ bool NoteBridge::handleChecklistClick(QQuickTextDocument *qdoc, int charPos) {
         QTextCursor cursor(doc);
         cursor.beginEditBlock();
 
-        // Conservar formato de fuente de la casilla sin tachar el icono en sí
         cursor.setPosition(block.position() + 1);
         QTextCharFormat boxFmt = cursor.charFormat();
         boxFmt.setFontStrikeOut(false);
@@ -128,7 +131,6 @@ bool NoteBridge::handleChecklistClick(QQuickTextDocument *qdoc, int charPos) {
         cursor.movePosition(QTextCursor::Right, QTextCursor::KeepAnchor, 1);
         cursor.insertText(markDone ? QStringLiteral("☑") : QStringLiteral("☐"), boxFmt);
 
-        // Tachar o destachar el texto del pendiente en ese bloque
         cursor.setPosition(block.position() + 2);
         cursor.movePosition(QTextCursor::EndOfBlock, QTextCursor::KeepAnchor);
         QTextCharFormat textFmt;
@@ -139,6 +141,83 @@ bool NoteBridge::handleChecklistClick(QQuickTextDocument *qdoc, int charPos) {
         return true;
     }
     return false;
+}
+
+void NoteBridge::setFontFamily(QQuickTextDocument *qdoc, const QString &family) {
+    if (!qdoc || !qdoc->textDocument() || family.isEmpty()) return;
+    QTextDocument *doc = qdoc->textDocument();
+
+    QFont defFont = doc->defaultFont();
+    defFont.setFamily(family);
+    doc->setDefaultFont(defFont);
+
+    QTextCursor cursor(doc);
+    cursor.beginEditBlock();
+
+    cursor.select(QTextCursor::Document);
+    QTextCharFormat mergeFmt;
+    mergeFmt.setFontFamilies(QStringList{family});
+    mergeFmt.setProperty(QTextFormat::FontFamily, family);
+    cursor.mergeCharFormat(mergeFmt);
+
+    for (QTextBlock block = doc->begin(); block.isValid(); block = block.next()) {
+        QTextCursor blockCursor(block);
+        QTextCharFormat bFmt = block.charFormat();
+        bFmt.setFontFamilies(QStringList{family});
+        bFmt.setProperty(QTextFormat::FontFamily, family);
+        blockCursor.setBlockCharFormat(bFmt);
+
+        for (auto it = block.begin(); !it.atEnd(); ++it) {
+            QTextFragment frag = it.fragment();
+            if (!frag.isValid()) continue;
+            QTextCharFormat fmt = frag.charFormat();
+            fmt.setFontFamilies(QStringList{family});
+            fmt.setProperty(QTextFormat::FontFamily, family);
+            cursor.setPosition(frag.position());
+            cursor.setPosition(frag.position() + frag.length(), QTextCursor::KeepAnchor);
+            cursor.setCharFormat(fmt);
+        }
+    }
+
+    cursor.endEditBlock();
+}
+
+void NoteBridge::setFontSize(QQuickTextDocument *qdoc, int pixelSize) {
+    if (!qdoc || !qdoc->textDocument() || pixelSize <= 0) return;
+    QTextDocument *doc = qdoc->textDocument();
+
+    QFont defFont = doc->defaultFont();
+    defFont.setPixelSize(pixelSize);
+    doc->setDefaultFont(defFont);
+
+    QTextCursor cursor(doc);
+    cursor.beginEditBlock();
+
+    cursor.select(QTextCursor::Document);
+    QTextCharFormat mergeFmt;
+    mergeFmt.setProperty(QTextFormat::FontPixelSize, pixelSize);
+    cursor.mergeCharFormat(mergeFmt);
+
+    for (QTextBlock block = doc->begin(); block.isValid(); block = block.next()) {
+        QTextCursor blockCursor(block);
+        QTextCharFormat bFmt = block.charFormat();
+        bFmt.clearProperty(QTextFormat::FontPointSize);
+        bFmt.setProperty(QTextFormat::FontPixelSize, pixelSize);
+        blockCursor.setBlockCharFormat(bFmt);
+
+        for (auto it = block.begin(); !it.atEnd(); ++it) {
+            QTextFragment frag = it.fragment();
+            if (!frag.isValid()) continue;
+            QTextCharFormat fmt = frag.charFormat();
+            fmt.clearProperty(QTextFormat::FontPointSize);
+            fmt.setProperty(QTextFormat::FontPixelSize, pixelSize);
+            cursor.setPosition(frag.position());
+            cursor.setPosition(frag.position() + frag.length(), QTextCursor::KeepAnchor);
+            cursor.setCharFormat(fmt);
+        }
+    }
+
+    cursor.endEditBlock();
 }
 
 QQuickItem* NoteBridge::findAppletContainer(QQuickItem *item) const {
@@ -162,9 +241,84 @@ QQuickItem* NoteBridge::findAppletContainer(QQuickItem *item) const {
     return candidate;
 }
 
+void NoteBridge::bindContainerSignals(QQuickItem *container) {
+    if (!container) return;
+
+    if (m_boundContainer != container) {
+        if (m_boundContainer) {
+            disconnect(m_boundContainer, nullptr, this, nullptr);
+        }
+        m_boundContainer = container;
+        connect(m_boundContainer, &QQuickItem::xChanged, this, &NoteBridge::onContainerGeometryChanged, Qt::UniqueConnection);
+        connect(m_boundContainer, &QQuickItem::yChanged, this, &NoteBridge::onContainerGeometryChanged, Qt::UniqueConnection);
+        connect(m_boundContainer, &QQuickItem::widthChanged, this, &NoteBridge::onContainerGeometryChanged, Qt::UniqueConnection);
+        connect(m_boundContainer, &QQuickItem::heightChanged, this, &NoteBridge::onContainerGeometryChanged, Qt::UniqueConnection);
+    }
+
+    QQuickItem *layout = container->parentItem();
+    if (layout && m_boundLayout != layout) {
+        if (m_boundLayout) {
+            disconnect(m_boundLayout, nullptr, this, nullptr);
+        }
+        m_boundLayout = layout;
+        connect(m_boundLayout, &QQuickItem::widthChanged, this, &NoteBridge::onContainerGeometryChanged, Qt::UniqueConnection);
+        connect(m_boundLayout, &QQuickItem::heightChanged, this, &NoteBridge::onContainerGeometryChanged, Qt::UniqueConnection);
+    }
+}
+
+void NoteBridge::onContainerGeometryChanged() {
+    if (m_isMoving || m_isResizing || m_RestoringGuard || !m_boundContainer || !m_hasSavedPos) {
+        return;
+    }
+
+    // Si el usuario está moviendo el widget desde el modo de edición nativo de Plasma, respetarlo
+    QVariant editProp = m_boundContainer->property("editMode");
+    if (editProp.isValid() && editProp.toBool()) {
+        m_savedPos = m_boundContainer->position();
+        return;
+    }
+
+    const qreal dx = qAbs(m_boundContainer->x() - m_savedPos.x());
+    const qreal dy = qAbs(m_boundContainer->y() - m_savedPos.y());
+    if (dx > 1.0 || dy > 1.0) {
+        QTimer::singleShot(10, this, &NoteBridge::applySavedGeometry);
+    }
+}
+
+void NoteBridge::applySavedGeometry() {
+    if (m_isMoving || m_isResizing || !m_boundContainer || !m_hasSavedPos) {
+        return;
+    }
+    m_RestoringGuard = true;
+    m_boundContainer->setPosition(m_savedPos);
+    if (m_savedSize.width() >= 180 && m_savedSize.height() >= 160) {
+        m_boundContainer->setSize(m_savedSize);
+    }
+    m_RestoringGuard = false;
+}
+
+bool NoteBridge::syncGeometry(QQuickItem *appletItem, int x, int y, int w, int h) {
+    QQuickItem *container = findAppletContainer(appletItem);
+    if (!container) return false;
+
+    bindContainerSignals(container);
+
+    if (w >= 180 && h >= 160) {
+        m_savedSize = QSizeF(w, h);
+    }
+    if (x > -10000 && y > -10000) {
+        m_savedPos = QPointF(x, y);
+        m_hasSavedPos = true;
+        applySavedGeometry();
+    }
+    return true;
+}
+
 void NoteBridge::beginMove(QQuickItem *appletItem) {
     m_targetContainer = findAppletContainer(appletItem);
     if (!m_targetContainer) return;
+    bindContainerSignals(m_targetContainer);
+    m_isMoving = true;
     m_startCursorPos = QCursor::pos();
     m_startContainerPos = m_targetContainer->position();
 }
@@ -172,26 +326,26 @@ void NoteBridge::beginMove(QQuickItem *appletItem) {
 void NoteBridge::updateMove() {
     if (!m_targetContainer) return;
     QPoint delta = QCursor::pos() - m_startCursorPos;
-    m_targetContainer->setPosition(m_startContainerPos + QPointF(delta.x(), delta.y()));
+    QPointF newPos = m_startContainerPos + QPointF(delta.x(), delta.y());
+    m_targetContainer->setPosition(newPos);
+    m_savedPos = newPos;
+    m_hasSavedPos = true;
 }
 
 QPointF NoteBridge::endMove(QQuickItem *appletItem) {
-    QQuickItem *container = m_targetContainer ? m_targetContainer : findAppletContainer(appletItem);
-    if (!container) return QPointF(-1, -1);
-    return container->position();
-}
-
-bool NoteBridge::restorePosition(QQuickItem *appletItem, int x, int y) {
-    if (x < 0 || y < 0) return false;
-    QQuickItem *container = findAppletContainer(appletItem);
-    if (!container) return false;
-    container->setPosition(QPointF(x, y));
-    return true;
+    m_isMoving = false;
+    QQuickItem *container = m_targetContainer ? m_targetContainer.data() : findAppletContainer(appletItem);
+    if (!container) return QPointF(-99999, -99999);
+    m_savedPos = container->position();
+    m_hasSavedPos = true;
+    return m_savedPos;
 }
 
 void NoteBridge::beginResize(QQuickItem *appletItem) {
     m_targetContainer = findAppletContainer(appletItem);
     if (!m_targetContainer) return;
+    bindContainerSignals(m_targetContainer);
+    m_isResizing = true;
     m_startCursorPos = QCursor::pos();
     m_startContainerSize = m_targetContainer->size();
 }
@@ -201,8 +355,17 @@ QSizeF NoteBridge::updateResize(qreal minW, qreal minH) {
     QPoint delta = QCursor::pos() - m_startCursorPos;
     qreal newW = qMax(minW, m_startContainerSize.width() + delta.x());
     qreal newH = qMax(minH, m_startContainerSize.height() + delta.y());
-    m_targetContainer->setSize(QSizeF(newW, newH));
-    return QSizeF(newW, newH);
+    m_savedSize = QSizeF(newW, newH);
+    m_targetContainer->setSize(m_savedSize);
+    return m_savedSize;
+}
+
+QSizeF NoteBridge::endResize(QQuickItem *appletItem) {
+    m_isResizing = false;
+    QQuickItem *container = m_targetContainer ? m_targetContainer.data() : findAppletContainer(appletItem);
+    if (!container) return m_savedSize;
+    m_savedSize = container->size();
+    return m_savedSize;
 }
 
 QRectF NoteBridge::nextCascadeGeometry(QQuickItem *appletItem) const {
